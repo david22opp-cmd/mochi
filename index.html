@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>Mochi</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#0b1020;color:#e8ecf5;font-family:system-ui,-apple-system,Roboto,sans-serif}
+body{display:flex;flex-direction:column;align-items:center;padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+header{width:100%;max-width:480px;display:flex;justify-content:space-between;align-items:center;padding:12px 0}
+#conn{font-size:13px;color:#8aa0c0;display:flex;align-items:center;gap:8px}
+#dot{width:9px;height:9px;border-radius:50%;background:#6b7280}
+#dot.on{background:#22c55e}
+button{background:#18213a;color:#e8ecf5;border:1px solid #2a3558;border-radius:8px;padding:8px 12px;font-size:14px}
+button:active{transform:scale(.98)}
+main{flex:1;width:100%;max-width:480px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+svg{width:100%;max-width:380px;height:auto}
+#label{font-family:ui-monospace,Menlo,monospace;font-size:15px;color:#8aa0c0;margin:4px 0 16px;min-height:22px}
+#chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;min-height:40px}
+.chip{display:flex;align-items:center;gap:8px;background:#121a30;border:1px solid #2a3558;border-radius:999px;padding:6px 12px;font-size:13px}
+.chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.chip span{color:#8aa0c0}
+footer{width:100%;max-width:480px;display:flex;gap:8px;justify-content:center;padding:14px 0}
+#setup{position:fixed;inset:0;background:#0b1020;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
+#setup.show{display:flex}
+#setup input{width:100%;max-width:360px;padding:12px;border-radius:8px;border:1px solid #2a3558;background:#121a30;color:#e8ecf5;font-size:16px}
+#err{color:#f87171;font-size:13px;min-height:18px}
+</style>
+</head>
+<body>
+<header><div id="conn"><span id="dot"></span><span id="ctext">Hors ligne</span></div><button id="cfg">Canal</button></header>
+<main>
+<svg id="m" viewBox="0 0 360 290" role="img" aria-label="Mochi"></svg>
+<div id="label">en attente</div>
+<div id="chips"></div>
+</main>
+<footer><button id="test">Test états</button><button id="wake">Écran allumé : non</button></footer>
+<div id="setup">
+<h2 style="margin:0">Ton canal ntfy</h2>
+<p style="margin:0;color:#8aa0c0;max-width:340px">Colle uniquement le nom du canal (sans ntfy.sh/), le même que dans l'app ntfy.</p>
+<input id="topic" placeholder="mochi-xxxxxxxxxxxx" autocapitalize="off" autocomplete="off" spellcheck="false">
+<div id="err"></div>
+<button id="save">Enregistrer</button>
+</div>
+<script>
+var $=function(i){return document.getElementById(i)};
+var ST={
+idle:{c:'#f2f2f4',e:'line'},working:{c:'#a8cbff',e:'dot',b:'dots',bc:'#3b82f6'},thinking:{c:'#d2bfff',e:'dot',b:'dots',bc:'#8b5cf6'},
+approval:{c:'#ffd9a0',e:'dot',b:'!',bc:'#f59e0b'},question:{c:'#a0e4f0',e:'dot',b:'?',bc:'#22b8cf'},error:{c:'#ffb3c0',e:'line',b:'dot',bc:'#ef4444'},
+finished:{c:'#b9f0d2',e:'up',b:'dot',bc:'#22c55e'},sleeping:{c:'#f2f2f4',e:'down',b:'z',bc:'#8aa0c0'},dizzy:{c:'#f4b8e0',e:'spiral'},
+love:{c:'#bcd4ff',e:'heart',b:'dots',bc:'#3b82f6'},greeting:{c:'#f2f2f4',e:'up'}};
+var AG={'claude-code':'#d97757','codex':'#10a37f','cursor':'#cfcfd4','gemini':'#4f8cff','antigravity':'#c779ff','gmail':'#ef4444'};
+var topic=null,mem=null;
+try{topic=localStorage.getItem('mochi-topic')}catch(e){topic=mem}
+var cur='greeting',col=[242,242,244],cx=180,cy=150,rx=125,ry=97,n=2.7,t0=performance.now(),nextBlink=2,agents={},idleTimer=null,es=null,wl=null;
+function hex(h){var c=parseInt(h.slice(1),16);return[c>>16,c>>8&255,c&255]}
+function rgb(a,k){return 'rgb('+a.map(function(v){return Math.max(0,Math.min(255,Math.round(v*k)))}).join(',')+')'}
+var pts=[];for(var i=0;i<120;i++){var t=i/120*2*Math.PI,c=Math.cos(t),s=Math.sin(t);pts.push((cx+rx*Math.sign(c)*Math.pow(Math.abs(c),2/n)).toFixed(1)+','+(cy+ry*Math.sign(s)*Math.pow(Math.abs(s),2/n)).toFixed(1))}
+var D='M'+pts.join('L')+'Z';
+$('m').innerHTML='<defs><radialGradient id="g" cx="40%" cy="30%" r="80%"><stop id="s0" offset="0"/><stop id="s1" offset="0.7"/><stop id="s2" offset="1"/></radialGradient><clipPath id="cp"><path d="'+D+'"/></clipPath></defs>'+
+'<ellipse id="sh" cx="180" cy="274" rx="95" ry="7" fill="#000" opacity="0.4"/><g id="body"><path d="'+D+'" fill="url(#g)"/><g clip-path="url(#cp)"><ellipse cx="'+(cx+rx*0.34)+'" cy="'+(cy-ry*0.52)+'" rx="24" ry="11" fill="#fff" opacity="0.65" transform="rotate(-18 '+(cx+rx*0.34)+' '+(cy-ry*0.52)+')"/></g>'+
+'<ellipse cx="118" cy="172" rx="17" ry="9" fill="#ff7aa2" opacity="0.4"/><ellipse cx="242" cy="172" rx="17" ry="9" fill="#ff7aa2" opacity="0.4"/>'+
+'<g id="eL"></g><g id="eR"></g><g id="bd"></g></g>';
+var B=$('body'),EL=$('eL'),ER=$('eR'),BD=$('bd');
+function eye(type){
+if(type==='dot')return '<ellipse rx="8" ry="10" fill="#111"/><circle cx="2" cy="-3" r="2.2" fill="#fff"/>';
+if(type==='line')return '<rect x="-8" y="-1.5" width="16" height="3.5" rx="2" fill="#111"/>';
+if(type==='up')return '<path d="M-10 5Q0 -9 10 5" stroke="#111" stroke-width="4.5" fill="none" stroke-linecap="round"/>';
+if(type==='down')return '<path d="M-10 -3Q0 9 10 -3" stroke="#111" stroke-width="4" fill="none" stroke-linecap="round"/>';
+if(type==='spiral')return '<circle r="9" stroke="#111" stroke-width="3" fill="none"/><circle r="4" stroke="#111" stroke-width="3" fill="none"/>';
+return '<path d="M0 9C-15 -2 -9 -13 0 -5C9 -13 15 -2 0 9Z" fill="#ff4f80"/>'}
+function badge(s){
+if(!s.b)return '';var x=108,y=80;
+if(s.b==='dots')return '<rect x="'+(x-18)+'" y="'+(y-9)+'" width="36" height="18" rx="9" fill="'+s.bc+'"/><circle cx="'+(x-8)+'" cy="'+y+'" r="2.8" fill="#fff"/><circle cx="'+x+'" cy="'+y+'" r="2.8" fill="#fff"/><circle cx="'+(x+8)+'" cy="'+y+'" r="2.8" fill="#fff"/>';
+if(s.b==='dot')return '<circle cx="'+x+'" cy="'+y+'" r="8" fill="'+s.bc+'"/>';
+if(s.b==='z')return '<text x="250" y="70" font-family="monospace" font-size="20" fill="'+s.bc+'">z</text>';
+return '<circle cx="'+x+'" cy="'+y+'" r="10" fill="'+s.bc+'"/><text x="'+x+'" y="'+(y+5)+'" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="500" fill="#fff">'+s.b+'</text>'}
+function setState(k){if(!ST[k])k='question';cur=k;var s=ST[k];EL.innerHTML=ER.innerHTML=eye(s.e);BD.innerHTML=badge(s)}
+function renderChips(){
+var h='';Object.keys(agents).forEach(function(a){h+='<div class="chip"><i style="background:'+(AG[a]||'#8aa0c0')+'"></i>'+a+' <span>'+agents[a]+'</span></div>'});
+$('chips').innerHTML=h}
+function handle(msg){
+var i=msg.indexOf(':'),agent=i>0?msg.slice(0,i).trim():'agent',state=(i>0?msg.slice(i+1):msg).trim().toLowerCase();
+if(!/^[a-z0-9_-]{1,30}$/.test(agent))agent='agent';
+agents[agent]=state;renderChips();setState(state);$('label').textContent=agent+' · '+state;
+clearTimeout(idleTimer);
+if(state==='finished')idleTimer=setTimeout(function(){setState('idle');$('label').textContent='en attente'},25000);
+if(state==='error')idleTimer=setTimeout(function(){setState('idle');$('label').textContent='en attente'},60000)}
+function setConn(on){$('dot').className=on?'on':'';$('ctext').textContent=on?'Connecté':'Reconnexion…'}
+function connect(){
+if(es){es.close();es=null}
+if(!topic){$('setup').className='show';return}
+es=new EventSource('https://ntfy.sh/'+topic+'/sse');
+es.onopen=function(){setConn(true)};
+es.onerror=function(){setConn(false)};
+es.onmessage=function(e){try{var d=JSON.parse(e.data);if(d.event==='message'&&d.message)handle(d.message)}catch(x){}}}
+$('cfg').onclick=function(){$('topic').value=topic||'';$('setup').className='show'};
+$('save').onclick=function(){
+var v=$('topic').value.trim();
+if(!/^[A-Za-z0-9_-]{1,64}$/.test(v)){$('err').textContent='Nom invalide : lettres, chiffres et tirets uniquement.';return}
+$('err').textContent='';topic=v;mem=v;try{localStorage.setItem('mochi-topic',v)}catch(e){}
+$('setup').className='';connect()};
+var seq=['working','thinking','approval','question','error','finished','dizzy','love','sleeping','greeting'],si=0;
+$('test').onclick=function(){var k=seq[si++%seq.length];handle('claude-code:'+k)};
+$('wake').onclick=function(){
+if(wl){wl.release();wl=null;$('wake').textContent='Écran allumé : non';return}
+if(!navigator.wakeLock){$('wake').textContent='Non supporté';return}
+navigator.wakeLock.request('screen').then(function(l){wl=l;$('wake').textContent='Écran allumé : oui';l.addEventListener('release',function(){wl=null;$('wake').textContent='Écran allumé : non'})}).catch(function(){$('wake').textContent='Refusé'})};
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&topic&&(!es||es.readyState===2))connect()});
+function loop(now){
+var t=(now-t0)/1000,s=ST[cur],tc=hex(s.c);
+for(var i=0;i<3;i++)col[i]+=(tc[i]-col[i])*0.12;
+$('s0').setAttribute('stop-color',rgb(col,1));$('s1').setAttribute('stop-color',rgb(col,0.86));$('s2').setAttribute('stop-color',rgb(col,0.7));
+var sp=cur==='working'?5:2,y=Math.sin(t*sp)*3,x=0,r=0,sc=1;
+if(cur==='error')x=Math.sin(t*40)*4*Math.max(0,1-(t%3)/0.6);
+if(cur==='dizzy')r=Math.sin(t*5)*6;
+if(cur==='finished'||cur==='greeting'||cur==='love')y=-Math.abs(Math.sin(t*3))*10;
+if(cur==='sleeping'){sc=1+Math.sin(t*1.5)*0.02;y=0}
+B.setAttribute('transform','translate('+x.toFixed(1)+','+y.toFixed(1)+') rotate('+r.toFixed(1)+' 180 150) translate(180 150) scale('+sc.toFixed(3)+') translate(-180 -150)');
+$('sh').setAttribute('rx',(95-y*1.5).toFixed(1));
+var bl=1;if(t>nextBlink){var d=t-nextBlink;bl=d<0.12?0.1:1;if(d>0.12)nextBlink=t+2+Math.random()*3}
+if(s.e==='dot'){EL.setAttribute('transform','translate(125,152) scale(1,'+bl+')');ER.setAttribute('transform','translate(235,152) scale(1,'+bl+')')}
+else{EL.setAttribute('transform','translate(125,152)');ER.setAttribute('transform','translate(235,152)')}
+if(cur==='dizzy'){EL.setAttribute('transform','translate(125,152) rotate('+(t*300%360)+')');ER.setAttribute('transform','translate(235,152) rotate('+(-t*300%360)+')')}
+requestAnimationFrame(loop)}
+setState('greeting');requestAnimationFrame(loop);connect();
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){})}
+</script>
+</body>
+</html>
