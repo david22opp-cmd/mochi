@@ -24,7 +24,7 @@ svg{width:100%;max-width:380px;height:auto}
 .chip{display:flex;align-items:center;gap:8px;background:#121a30;border:1px solid #2a3558;border-radius:999px;padding:6px 12px;font-size:13px}
 .chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
 .chip span{color:#8aa0c0}
-footer{width:100%;max-width:480px;display:flex;gap:8px;justify-content:center;padding:14px 0}
+footer{width:100%;max-width:480px;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:14px 0}
 #setup{position:fixed;inset:0;background:#0b1020;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center}
 #setup.show{display:flex}
 #setup input{width:100%;max-width:360px;padding:12px;border-radius:8px;border:1px solid #2a3558;background:#121a30;color:#e8ecf5;font-size:16px}
@@ -38,7 +38,7 @@ footer{width:100%;max-width:480px;display:flex;gap:8px;justify-content:center;pa
 <div id="label">en attente</div>
 <div id="chips"></div>
 </main>
-<footer><button id="test">Test états</button><button id="wake">Écran allumé : non</button></footer>
+<footer><button id="test">Test états</button><button id="voice">Voix : non</button><button id="wake">Écran allumé : non</button></footer>
 <div id="setup">
 <h2 style="margin:0">Ton canal ntfy</h2>
 <p style="margin:0;color:#8aa0c0;max-width:340px">Colle uniquement le nom du canal (sans ntfy.sh/), le même que dans l'app ntfy.</p>
@@ -83,13 +83,26 @@ function setState(k){if(!ST[k])k='question';cur=k;var s=ST[k];EL.innerHTML=ER.in
 function renderChips(){
 var h='';Object.keys(agents).forEach(function(a){h+='<div class="chip"><i style="background:'+(AG[a]||'#8aa0c0')+'"></i>'+a+' <span>'+agents[a]+'</span></div>'});
 $('chips').innerHTML=h}
+var voiceOn=false;
+try{voiceOn=localStorage.getItem('mochi-voice')==='1'}catch(e){}
+function speak(t){
+if(!voiceOn||!('speechSynthesis' in window))return;
+try{speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t.slice(0,80));u.lang='fr-FR';speechSynthesis.speak(u)}catch(e){}}
+function showVoice(){$('voice').textContent='Voix : '+(voiceOn?'oui':'non')}
+$('voice').onclick=function(){
+voiceOn=!voiceOn;try{localStorage.setItem('mochi-voice',voiceOn?'1':'0')}catch(e){}
+showVoice();if(voiceOn)speak('Voix activée')};
+showVoice();
 function handle(msg){
-var i=msg.indexOf(':'),agent=i>0?msg.slice(0,i).trim():'agent',state=(i>0?msg.slice(i+1):msg).trim().toLowerCase();
+var p=msg.split(':'),agent=p.length>1?p[0].trim():'agent',state=(p.length>1?p[1]:p[0]).trim().toLowerCase(),detail=p.slice(2).join(':').trim().slice(0,60);
 if(!/^[a-z0-9_-]{1,30}$/.test(agent))agent='agent';
-agents[agent]=state;renderChips();setState(state);$('label').textContent=agent+' · '+state;
+if(!/^[a-z0-9_-]{1,30}$/.test(state))state='question';
+agents[agent]=state;renderChips();setState(state);
+$('label').textContent=agent+' · '+state+(detail?' · '+detail:'');
+if(agent==='gmail'&&state==='question')speak(detail?'Nouveau mail de '+detail:'Nouveau mail');
 clearTimeout(idleTimer);
-if(state==='finished')idleTimer=setTimeout(function(){setState('idle');$('label').textContent='en attente'},25000);
-if(state==='error')idleTimer=setTimeout(function(){setState('idle');$('label').textContent='en attente'},60000)}
+var delay=state==='finished'?25000:state==='error'?60000:state==='question'?30000:0;
+if(delay)idleTimer=setTimeout(function(){setState('idle');$('label').textContent='en attente'},delay)}
 function setConn(on){$('dot').className=on?'on':'';$('ctext').textContent=on?'Connecté':'Reconnexion…'}
 function connect(){
 if(es){es.close();es=null}
@@ -104,8 +117,8 @@ var v=$('topic').value.trim();
 if(!/^[A-Za-z0-9_-]{1,64}$/.test(v)){$('err').textContent='Nom invalide : lettres, chiffres et tirets uniquement.';return}
 $('err').textContent='';topic=v;mem=v;try{localStorage.setItem('mochi-topic',v)}catch(e){}
 $('setup').className='';connect()};
-var seq=['working','thinking','approval','question','error','finished','dizzy','love','sleeping','greeting'],si=0;
-$('test').onclick=function(){var k=seq[si++%seq.length];handle('claude-code:'+k)};
+var seq=['working','thinking','approval','question','error','finished','dizzy','love','sleeping','greeting','gmail:question:Marie Dupont'],si=0;
+$('test').onclick=function(){var k=seq[si++%seq.length];handle(k.indexOf(':')>0?k:'claude-code:'+k)};
 $('wake').onclick=function(){
 if(wl){wl.release();wl=null;$('wake').textContent='Écran allumé : non';return}
 if(!navigator.wakeLock){$('wake').textContent='Non supporté';return}
